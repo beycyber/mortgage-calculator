@@ -14,32 +14,61 @@ const LPR_5Y = [
   ["2026-05-20", 3.5],
 ].map(([date, rate]) => ({ date, rate }));
 
-const SHANGHAI_RULES = [
-  {
-    from: "2019-08-20",
-    first: 35,
-    secondCore: 105,
-    secondSuburban: 105,
-    note: "2019-08-20 后上海常见首套下限按 LPR+35BP 估算",
+const CITY_OPTIONS = {
+  shanghai: {
+    name: "上海",
+    homeTypes: [
+      ["first", "首套"],
+      ["secondCore", "二套-其他区域"],
+      ["secondSuburban", "二套-临港/嘉青松奉宝金"],
+    ],
   },
-  {
-    from: "2023-12-15",
-    first: -10,
-    secondCore: 30,
-    secondSuburban: 20,
-    note: "2023-12-15 上海首套 LPR-10BP，二套 LPR+30BP/差异化区域 +20BP",
+  beijing: {
+    name: "北京",
+    homeTypes: [
+      ["first", "首套"],
+      ["secondCore", "二套-五环内"],
+      ["secondSuburban", "二套-五环外"],
+    ],
   },
-  {
-    from: "2024-05-28",
-    first: -45,
-    secondCore: -5,
-    secondSuburban: -25,
-    note: "2024-05-28 上海首套 LPR-45BP，二套 LPR-5BP/差异化区域 -25BP",
+  guangzhou: {
+    name: "广州",
+    homeTypes: [
+      ["first", "首套"],
+      ["secondCore", "二套"],
+    ],
   },
-];
+  shenzhen: {
+    name: "深圳",
+    homeTypes: [
+      ["first", "首套"],
+      ["secondCore", "二套"],
+    ],
+  },
+};
+
+const COMMERCIAL_LOAN_RULES = {
+  shanghai: [
+    { from: "2019-08-20", first: 35, secondCore: 105, secondSuburban: 105, note: "2019-08-20 后上海常见首套下限按 LPR+35BP 估算" },
+    { from: "2023-12-15", first: -10, secondCore: 30, secondSuburban: 20, note: "2023-12-15 上海首套 LPR-10BP，二套 LPR+30BP/差异化区域 +20BP" },
+    { from: "2024-05-28", first: -45, secondCore: -5, secondSuburban: -25, note: "2024-05-28 上海首套 LPR-45BP，二套 LPR-5BP/差异化区域 -25BP" },
+  ],
+  beijing: [
+    { from: "2019-08-20", first: 55, secondCore: 105, secondSuburban: 105, note: "2019-08-20 后北京常见首套 LPR+55BP、二套 LPR+105BP 估算" },
+    { from: "2024-06-27", first: -45, secondCore: -5, secondSuburban: -25, note: "2024-06-27 北京首套 LPR-45BP，二套五环内 LPR-5BP、五环外 LPR-25BP 估算" },
+  ],
+  guangzhou: [
+    { from: "2019-08-20", first: 0, secondCore: 60, secondSuburban: 60, note: "2019-08-20 后广州按常见首套 LPR、二套 LPR+60BP 估算" },
+    { from: "2024-05-28", first: 0, secondCore: 0, secondSuburban: 0, note: "广州已取消统一商贷利率下限，默认按 LPR+0BP 作中性估算" },
+  ],
+  shenzhen: [
+    { from: "2019-08-20", first: 30, secondCore: 60, secondSuburban: 60, note: "2019-08-20 后深圳常见首套 LPR+30BP、二套 LPR+60BP 估算" },
+    { from: "2024-05-29", first: -45, secondCore: -5, secondSuburban: -5, note: "2024-05-29 深圳首套 LPR-45BP、二套 LPR-5BP 估算" },
+  ],
+};
 
 const SHANGHAI_FUND_LOAN_RATES = [
-  ["2022-09-01", 3.25],
+  ["2015-10-24", 3.25],
   ["2023-01-01", 3.1],
   ["2025-01-01", 2.85],
   ["2026-01-01", 2.6],
@@ -51,6 +80,7 @@ let storageAvailable = true;
 
 const els = {
   form: document.querySelector("#loanForm"),
+  commercialEnabled: document.querySelector("#commercialEnabled"),
   principal: document.querySelector("#principal"),
   years: document.querySelector("#years"),
   startDate: document.querySelector("#startDate"),
@@ -86,11 +116,13 @@ const els = {
   rateInfo: document.querySelector("#rateInfo"),
   scheduleBody: document.querySelector("#scheduleBody"),
   chart: document.querySelector("#balanceChart"),
+  chartTooltip: document.querySelector("#chartTooltip"),
   exportCsv: document.querySelector("#exportCsv"),
   resetBtn: document.querySelector("#resetBtn"),
   fundEnabled: document.querySelector("#fundEnabled"),
   fundBalance: document.querySelector("#fundBalance"),
   fundMonthly: document.querySelector("#fundMonthly"),
+  fundLoanEnabled: document.querySelector("#fundLoanEnabled"),
   fundLoanStartDate: document.querySelector("#fundLoanStartDate"),
   fundLoanPrincipal: document.querySelector("#fundLoanPrincipal"),
   fundLoanTerm: document.querySelector("#fundLoanTerm"),
@@ -125,6 +157,8 @@ const els = {
 let rateMode = "auto";
 let activeTab = "prepay";
 let latestResult = null;
+const activeChartSeries = new Set(["balance", "commercial", "fundLoan", "combined"]);
+let latestChartHitAreas = [];
 
 function parseDate(value) {
   const [y, m, d] = value.split("-").map(Number);
@@ -156,12 +190,21 @@ function getLpr(dateIso) {
   return current.rate;
 }
 
-function getShanghaiRule(dateIso) {
-  let rule = SHANGHAI_RULES[0];
-  for (const item of SHANGHAI_RULES) {
+function getCommercialLoanRule(city, dateIso) {
+  const rules = COMMERCIAL_LOAN_RULES[city] || COMMERCIAL_LOAN_RULES.shanghai;
+  let rule = rules[0];
+  for (const item of rules) {
     if (compareIso(item.from, dateIso) <= 0) rule = item;
   }
   return rule;
+}
+
+function syncHomeTypeOptions(preferredValue = els.homeType.value) {
+  const city = CITY_OPTIONS[els.loanCity.value] || CITY_OPTIONS.shanghai;
+  const validValues = city.homeTypes.map(([value]) => value);
+  const nextValue = validValues.includes(preferredValue) ? preferredValue : city.homeTypes[0][0];
+  els.homeType.innerHTML = city.homeTypes.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+  els.homeType.value = nextValue;
 }
 
 function getShanghaiFundLoanRate(dateIso) {
@@ -255,8 +298,8 @@ function nextCycleRepriceDate(anchorIso, changeIso, cycleMonths) {
 function syncInitialRateMatch({ resetSpread = false, resetLpr = false } = {}) {
   const startIso = els.startDate.value;
   if (!startIso) return;
-  const rule = getShanghaiRule(startIso);
-  const matchedSpread = rule[els.homeType.value];
+  const rule = getCommercialLoanRule(els.loanCity.value, startIso);
+  const matchedSpread = rule[els.homeType.value] ?? rule.first ?? 0;
   const matchedLpr = getLpr(startIso);
   if (resetSpread || els.initialSpreadBps.value === "") els.initialSpreadBps.value = matchedSpread;
   if (resetLpr || els.initialLpr.value === "") els.initialLpr.value = matchedLpr.toFixed(2);
@@ -293,6 +336,7 @@ function getPrepayRowsForStorage() {
 function collectFormState() {
   return {
     rateMode,
+    commercialEnabled: els.commercialEnabled.checked,
     principal: els.principal.value,
     years: els.years.value,
     startDate: els.startDate.value,
@@ -317,6 +361,7 @@ function collectFormState() {
     fundEnabled: els.fundEnabled.checked,
     fundBalance: els.fundBalance.value,
     fundMonthly: els.fundMonthly.value,
+    fundLoanEnabled: els.fundLoanEnabled.checked,
     fundLoanStartDate: els.fundLoanStartDate.value,
     fundLoanPrincipal: els.fundLoanPrincipal.value,
     fundLoanTerm: els.fundLoanTerm.value,
@@ -408,7 +453,7 @@ function renderSavedOptions(selectedId = "") {
 
 function saveScenario() {
   const now = new Date().toISOString();
-  const fallbackName = `${els.startDate.value || "房贷"} ${els.principal.value || "0"}万`;
+  const fallbackName = els.commercialEnabled.checked ? `${els.startDate.value || "房贷"} ${els.principal.value || "0"}万` : "现金流方案";
   const name = (els.scenarioName.value || fallbackName).trim().slice(0, 28);
   const items = readSavedScenarios();
   const currentId = els.savedScenarios.value;
@@ -428,12 +473,13 @@ function saveScenario() {
 
 function applyFormState(state) {
   setRateMode(state.rateMode || "auto");
+  els.commercialEnabled.checked = state.commercialEnabled ?? true;
   els.principal.value = state.principal ?? els.principal.value;
   els.years.value = state.years ?? els.years.value;
   els.startDate.value = state.startDate ?? els.startDate.value;
   els.repaymentType.value = state.repaymentType ?? els.repaymentType.value;
   els.loanCity.value = state.loanCity ?? els.loanCity.value;
-  els.homeType.value = state.homeType ?? els.homeType.value;
+  syncHomeTypeOptions(state.homeType ?? els.homeType.value);
   els.initialSpreadBps.value = state.initialSpreadBps ?? els.initialSpreadBps.value;
   els.initialLpr.value = state.initialLpr ?? els.initialLpr.value;
   els.repricing.value = state.repricing ?? els.repricing.value;
@@ -452,6 +498,7 @@ function applyFormState(state) {
   els.fundEnabled.checked = Boolean(state.fundEnabled);
   els.fundBalance.value = state.fundBalance ?? els.fundBalance.value;
   els.fundMonthly.value = state.fundMonthly ?? els.fundMonthly.value;
+  els.fundLoanEnabled.checked = state.fundLoanEnabled ?? false;
   els.fundLoanStartDate.value = state.fundLoanStartDate ?? els.fundLoanStartDate.value;
   els.fundLoanPrincipal.value = state.fundLoanPrincipal ?? els.fundLoanPrincipal.value;
   els.fundLoanTerm.value = state.fundLoanTerm ?? els.fundLoanTerm.value;
@@ -465,7 +512,7 @@ function applyFormState(state) {
   els.fundStartMonth.value = state.fundStartMonth ?? els.fundStartMonth.value;
   els.fundCap.value = state.fundCap ?? els.fundCap.value;
   els.prepayList.innerHTML = "";
-  const prepays = Array.isArray(state.prepays) && state.prepays.length ? state.prepays : [{ month: 36, amount: 30, mode: "shortenTerm" }];
+  const prepays = Array.isArray(state.prepays) ? state.prepays : [];
   prepays.forEach((item) => addPrepayRow(item.month, item.amount, item.mode));
   syncCommercialRateUi();
   renderResult();
@@ -553,6 +600,7 @@ function importScenariosBackup(event) {
 function getFundConfig() {
   return {
     enabled: els.fundEnabled.checked,
+    loanEnabled: els.fundLoanEnabled.checked,
     balance: Number(els.fundBalance.value || 0) * 10000,
     monthlyDeposit: Number(els.fundMonthly.value || 0),
     loanStartDate: els.fundLoanStartDate.value,
@@ -570,7 +618,9 @@ function getFundConfig() {
 }
 
 function getInputs() {
-  const startIso = els.startDate.value;
+  const commercialEnabled = els.commercialEnabled.checked;
+  const fund = getFundConfig();
+  const startIso = commercialEnabled ? els.startDate.value : fund.loanStartDate || els.startDate.value;
   const principal = Number(els.principal.value) * 10000;
   const totalMonths = Number(els.years.value) * 12;
   const repaymentType = els.repaymentType.value;
@@ -588,8 +638,8 @@ function getInputs() {
   const adjustmentLpr = Number(els.commercialAdjustmentLpr.value || 0);
 
   if (rateMode === "auto") {
-    const rule = getShanghaiRule(startIso);
-    spreadBps = rule[els.homeType.value] + Number(els.extraBps.value || 0);
+    const rule = getCommercialLoanRule(els.loanCity.value, startIso);
+    spreadBps = (rule[els.homeType.value] ?? rule.first ?? 0) + Number(els.extraBps.value || 0);
     initialRate = getLpr(startIso) + spreadBps / 100;
     ruleNote = rule.note;
   } else if (repricing !== "none") {
@@ -609,7 +659,7 @@ function getInputs() {
     .filter((item) => item.month > 0 && item.amount > 0)
     .sort((a, b) => a.month - b.month);
 
-  return { startIso, principal, totalMonths, repaymentType, spreadBps, initialRate, repricing, priorRepriceMonths, priorRepriceDate, cycleChangeDate, repriceMonths, firstRepriceDate, adjustmentDate, adjustmentLpr, spreadHistory, prepays, ruleNote, fund: getFundConfig() };
+  return { commercialEnabled, loanCity: els.loanCity.value, startIso, principal, totalMonths, repaymentType, spreadBps, initialRate, repricing, priorRepriceMonths, priorRepriceDate, cycleChangeDate, repriceMonths, firstRepriceDate, adjustmentDate, adjustmentLpr, spreadHistory, prepays, ruleNote, fund };
 }
 
 function shouldReprice(monthIndex, currentDate, startDate, config) {
@@ -635,6 +685,27 @@ function getCommercialAnnualRate(config, dateIso) {
 
 function calculatePlan(config, includePrepays) {
   const startDate = parseDate(config.startIso);
+  if (!config.commercialEnabled || config.principal <= 0 || config.totalMonths <= 0) {
+    const months = config.fund.loanEnabled ? Math.max(config.fund.loanTerm || 0, 1) : 0;
+    const schedule = Array.from({ length: months }, (_, index) => ({
+      month: index + 1,
+      date: iso(addMonths(startDate, index + 1)),
+      annualRate: 0,
+      payment: 0,
+      principal: 0,
+      interest: 0,
+      prepay: 0,
+      prepayMode: "",
+      balance: 0,
+    }));
+    return {
+      schedule,
+      totalInterest: 0,
+      payoffMonth: 0,
+      payoffDate: schedule.at(-1)?.date || config.startIso,
+    };
+  }
+
   const prepaysByMonth = new Map();
   if (includePrepays) {
     for (const item of config.prepays) {
@@ -744,7 +815,7 @@ function getElapsedFundLoanMonths(fund, dateIso) {
 }
 
 function calculateFundLoanState(fund, dateIso) {
-  if (!fund.enabled || fund.loanPrincipal <= 0 || fund.loanTerm <= 0) {
+  if (!fund.loanEnabled || fund.loanPrincipal <= 0 || fund.loanTerm <= 0) {
     return { balance: 0, remainingMonths: 0, annualRate: 0 };
   }
 
@@ -779,7 +850,8 @@ function calculateFundLoanState(fund, dateIso) {
 }
 
 function applyFundOffset(schedule, fund) {
-  let fundBalance = fund.enabled ? fund.balance : 0;
+  const usesFundAccount = fund.enabled || fund.loanEnabled;
+  let fundBalance = usesFundAccount ? fund.balance : 0;
   const initialFundLoanState = calculateFundLoanState(fund, schedule[0]?.date || fund.loanStartDate);
   let fundLoanBalance = initialFundLoanState.balance;
   let fundLoanRemainingMonths = initialFundLoanState.remainingMonths;
@@ -787,7 +859,7 @@ function applyFundOffset(schedule, fund) {
   let depletedMonth = null;
 
   return schedule.map((row) => {
-    if (!fund.enabled) {
+    if (!usesFundAccount) {
       return {
         ...row,
         fundLoanPayment: 0,
@@ -812,7 +884,7 @@ function applyFundOffset(schedule, fund) {
     let fundLoanPrincipalPaid = 0;
     let fundLoanInterest = 0;
 
-    if (fundLoanBalance > 0.01 && fund.loanTerm > 0) {
+    if (fund.loanEnabled && fundLoanBalance > 0.01 && fund.loanTerm > 0) {
       fundLoanInterest = fundLoanBalance * fundLoanMonthlyRate;
       if (fund.loanRepaymentType === "equalInstallment") {
         fundLoanPayment = Math.min(monthlyPayment(fundLoanBalance, fundLoanMonthlyRate, Math.max(fundLoanRemainingMonths, 1)), fundLoanBalance + fundLoanInterest);
@@ -829,7 +901,7 @@ function applyFundOffset(schedule, fund) {
     const fundLoanCashOut = fundLoanPayment - fundLoanPaid;
     fundBalance = Math.max(0, fundBalance - fundLoanPaid);
     const cap = fund.monthlyCap > 0 ? fund.monthlyCap : row.payment;
-    const offsetActive = row.month >= fund.startMonth;
+    const offsetActive = fund.enabled && row.month >= fund.startMonth;
     const fundOffset = offsetActive ? Math.min(row.payment, cap, fundBalance) : 0;
     fundBalance = Math.max(0, fundBalance - fundOffset);
     if (fundBalance <= 0.01 && fund.monthlyDeposit < row.payment + fundLoanPayment && depletedMonth === null) {
@@ -944,6 +1016,8 @@ function drawChart(rows) {
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
+  latestChartHitAreas = [];
+  hideChartTooltip();
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#fbfaf7";
   ctx.fillRect(0, 0, width, height);
@@ -952,8 +1026,19 @@ function drawChart(rows) {
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
   const maxMonth = Math.max(rows.length, 1);
-  const maxBalance = Math.max(...rows.map((r) => r.balance), 1);
-  const maxPayment = Math.max(...rows.map((r) => r.payment), 1);
+  const chartRows = rows.map((row) => ({
+    ...row,
+    commercialPayment: row.payment,
+    fundLoanChartPayment: row.fundLoanPayment || 0,
+    combinedPayment: row.payment + (row.fundLoanPayment || 0),
+  }));
+  const paymentFields = [
+    activeChartSeries.has("commercial") ? "commercialPayment" : null,
+    activeChartSeries.has("fundLoan") ? "fundLoanChartPayment" : null,
+    activeChartSeries.has("combined") ? "combinedPayment" : null,
+  ].filter(Boolean);
+  const maxBalance = activeChartSeries.has("balance") ? Math.max(...chartRows.map((r) => r.balance), 1) : 1;
+  const maxPayment = paymentFields.length ? Math.max(...paymentFields.flatMap((field) => chartRows.map((row) => row[field])), 1) : 1;
 
   ctx.strokeStyle = "#dce2e0";
   ctx.lineWidth = 1;
@@ -965,17 +1050,17 @@ function drawChart(rows) {
     ctx.moveTo(pad.left, y);
     ctx.lineTo(width - pad.right, y);
     ctx.stroke();
-    ctx.fillText(`${Math.round((maxBalance * (4 - i)) / 4 / 10000)}万`, 10, y + 4);
-    ctx.fillText(`${Math.round((maxPayment * (4 - i)) / 4)}元`, width - pad.right + 10, y + 4);
+    ctx.fillText(activeChartSeries.has("balance") ? `${Math.round((maxBalance * (4 - i)) / 4 / 10000)}万` : "", 10, y + 4);
+    ctx.fillText(paymentFields.length ? `${Math.round((maxPayment * (4 - i)) / 4)}元` : "", width - pad.right + 10, y + 4);
   }
 
-  if (rows.length) {
-    const firstYear = parseDate(rows[0].date).getFullYear();
-    const lastYear = parseDate(rows.at(-1).date).getFullYear();
+  if (chartRows.length) {
+    const firstYear = parseDate(chartRows[0].date).getFullYear();
+    const lastYear = parseDate(chartRows.at(-1).date).getFullYear();
     const yearStep = Math.max(1, Math.ceil((lastYear - firstYear + 1) / 8));
     ctx.fillStyle = "#6b747c";
     for (let year = firstYear; year <= lastYear; year += yearStep) {
-      const rowIndex = rows.findIndex((row) => parseDate(row.date).getFullYear() >= year);
+      const rowIndex = chartRows.findIndex((row) => parseDate(row.date).getFullYear() >= year);
       if (rowIndex < 0) continue;
       const x = pad.left + (plotW * rowIndex) / Math.max(maxMonth - 1, 1);
       ctx.beginPath();
@@ -992,25 +1077,74 @@ function drawChart(rows) {
     return [x, y];
   }
 
-  function line(color, field, maxValue) {
+  const firstBalanceIndexByYear = new Set();
+  const seenYears = new Set();
+  chartRows.forEach((row, index) => {
+    const year = parseDate(row.date).getFullYear();
+    if (!seenYears.has(year)) {
+      seenYears.add(year);
+      firstBalanceIndexByYear.add(index);
+    }
+  });
+
+  function registerHitArea(row, index, x, y, seriesKey, label, value) {
+    if (seriesKey === "balance" && !firstBalanceIndexByYear.has(index)) return;
+    latestChartHitAreas.push({ x, y, seriesKey, label, date: row.date, value });
+  }
+
+  function line(color, field, maxValue, seriesKey, label) {
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    rows.forEach((row, index) => {
+    chartRows.forEach((row, index) => {
       const [x, y] = point(row, index, field, maxValue);
       if (index === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
+      registerHitArea(row, index, x, y, seriesKey, label, row[field]);
     });
     ctx.stroke();
   }
 
-  line("#2f7d57", "balance", maxBalance);
-  line("#2e6f9e", "payment", maxPayment);
+  if (activeChartSeries.has("balance")) line("#2f7d57", "balance", maxBalance, "balance", "待还本金");
+  if (activeChartSeries.has("commercial")) line("#2e6f9e", "commercialPayment", maxPayment, "commercial", "商贷月供");
+  if (activeChartSeries.has("fundLoan")) line("#a8791d", "fundLoanChartPayment", maxPayment, "fundLoan", "公积金贷款月供");
+  if (activeChartSeries.has("combined")) line("#b75d4a", "combinedPayment", maxPayment, "combined", "公积金+商贷月供");
+}
 
-  ctx.fillStyle = "#2f7d57";
-  ctx.fillText("绿色：待还本金", pad.left, height - 18);
-  ctx.fillStyle = "#2e6f9e";
-  ctx.fillText("蓝色：商贷月供", pad.left + 140, height - 18);
+function hideChartTooltip() {
+  if (!els.chartTooltip) return;
+  els.chartTooltip.classList.add("hidden");
+}
+
+function handleChartHover(event) {
+  if (!latestChartHitAreas.length || !els.chartTooltip) {
+    hideChartTooltip();
+    return;
+  }
+
+  const canvasRect = els.chart.getBoundingClientRect();
+  const scaleX = els.chart.width / canvasRect.width;
+  const scaleY = els.chart.height / canvasRect.height;
+  const pointerX = (event.clientX - canvasRect.left) * scaleX;
+  const pointerY = (event.clientY - canvasRect.top) * scaleY;
+  const nearest = latestChartHitAreas.reduce(
+    (best, item) => {
+      const distance = Math.hypot(item.x - pointerX, item.y - pointerY);
+      return distance < best.distance ? { item, distance } : best;
+    },
+    { item: null, distance: Infinity },
+  );
+
+  if (!nearest.item || nearest.distance > 18) {
+    hideChartTooltip();
+    return;
+  }
+
+  const bandRect = els.chart.parentElement.getBoundingClientRect();
+  els.chartTooltip.innerHTML = `<strong>${nearest.item.label}</strong><span>${nearest.item.date}</span><span>${currency(nearest.item.value)}</span>`;
+  els.chartTooltip.style.left = `${event.clientX - bandRect.left + 14}px`;
+  els.chartTooltip.style.top = `${event.clientY - bandRect.top + 14}px`;
+  els.chartTooltip.classList.remove("hidden");
 }
 
 function renderResult() {
@@ -1027,15 +1161,18 @@ function renderResult() {
   els.totalInterest.textContent = currency(prepay.totalInterest);
   els.payoffDate.textContent = prepay.payoffDate;
   const changed = baseline.payoffMonth - prepay.payoffMonth;
-  els.termChange.textContent = changed > 0 ? `缩短 ${changed} 期` : changed < 0 ? `增加 ${Math.abs(changed)} 期` : "不变";
+  els.termChange.textContent = config.commercialEnabled ? (changed > 0 ? `缩短 ${changed} 期` : changed < 0 ? `增加 ${Math.abs(changed)} 期` : "不变") : "未启用商贷";
 
   const lpr = getLpr(config.startIso);
   const currentDateIso = iso(new Date());
   const currentSpreadBps = valueFromHistory(config.spreadHistory, currentDateIso, config.spreadBps);
   const currentLprDate = latestCycleRepriceDate(currentDateIso, config.firstRepriceDate, config.repriceMonths);
   const currentCommercialRate = getCommercialAnnualRate(config, currentDateIso);
-  els.shanghaiRuleInfo.textContent = `上海规则仅用于估算新发放商贷的初始利率下限：按放款日的 5 年期以上 LPR 加减政策点差。当前内置节点：2023-12-15 起首套 -10BP、二套其他区域 +30BP、差异化区域 +20BP；2024-05-28 起首套 -45BP、二套其他区域 -5BP、临港及嘉青松奉宝金 -25BP。本次按放款日匹配为 ${config.ruleNote}，修正后初始加点 ${formatBps(config.spreadBps)}。实际合同以银行记录为准。`;
-  els.rateInfo.textContent = `商贷当前测算利率 ${currentCommercialRate.toFixed(2)}% = ${getLpr(currentLprDate).toFixed(2)}% LPR ${formatBps(currentSpreadBps)}；重定价周期于 ${config.cycleChangeDate || "未填写"} 从 ${config.priorRepriceMonths} 个月改为 ${config.repriceMonths} 个月，下一重定价日 ${config.firstRepriceDate || "未填写"}。放款日 LPR ${lpr.toFixed(2)}%。`;
+  const cityName = CITY_OPTIONS[config.loanCity]?.name || "当前城市";
+  els.shanghaiRuleInfo.textContent = config.commercialEnabled
+    ? `页面会按${cityName}公开口径估算初始利率；如与贷款合同或银行记录不一致，请以合同和银行记录为准，可手动修正 LPR 或加点。`
+    : "未启用商贷时，商贷利率不参与测算。";
+  els.rateInfo.textContent = "展示当前方案下待还本金、商贷月供、公积金贷款月供与合计月供的变化；点击下方标签可显示或隐藏对应线条。";
   els.firstCashOut.textContent = currency(visiblePlan.firstCashOut);
   els.avgCashOut.textContent = (visiblePlan.currentYearCashOut / 10000).toFixed(2);
   els.currentYearCashBreakdown.textContent = `本金 ${(visiblePlan.currentYearCashBreakdown.principal / 10000).toFixed(2)} 万 · 利息 ${(visiblePlan.currentYearCashBreakdown.interest / 10000).toFixed(2)} 万`;
@@ -1047,13 +1184,15 @@ function renderResult() {
   const fundSummary = config.fund.enabled
     ? `使用公积金抵扣商贷后，今年以来自费支出为 ${(visiblePlan.currentYearCashOut / 10000).toFixed(2)} 万元。`
     : `未启用公积金抵扣商贷，今年以来自费支出为 ${(visiblePlan.currentYearCashOut / 10000).toFixed(2)} 万元。`;
-  els.resultSummary.textContent = `按当前方案，预计可节省利息 ${(saved / 10000).toFixed(2)} 万元，还贷期限${els.termChange.textContent}；${fundSummary}`;
-  els.detailMode.textContent = `${hasPrepays ? "含提前还款" : "无提前还款"}，${config.fund.enabled ? "含公积金月冲" : "未启用公积金月冲"}`;
+  els.resultSummary.textContent = config.commercialEnabled
+    ? `按当前方案，预计可节省利息 ${(saved / 10000).toFixed(2)} 万元，还贷期限${els.termChange.textContent}；${fundSummary}`
+    : `当前未启用商贷，测算仅展示已启用贷款和公积金账户产生的现金流；今年以来自费支出为 ${(visiblePlan.currentYearCashOut / 10000).toFixed(2)} 万元。`;
+  els.detailMode.textContent = `${config.commercialEnabled ? (hasPrepays ? "含提前还款" : "无提前还款") : "未启用商贷"}，${config.fund.enabled ? "含公积金月冲" : "未启用公积金月冲"}`;
   drawChart(visiblePlan.schedule);
   renderTable(visiblePlan.schedule);
 }
 
-function addPrepayRow(month = 36, amount = 30, mode = "shortenTerm") {
+function addPrepayRow(month = 36, amount = 10, mode = "shortenTerm") {
   const row = document.createElement("div");
   row.className = "prepay-row";
   row.innerHTML = `
@@ -1120,7 +1259,12 @@ els.form.addEventListener("submit", (event) => {
   renderResult();
 });
 els.form.addEventListener("input", renderResult);
-[els.loanCity, els.homeType, els.startDate].forEach((input) => {
+els.loanCity.addEventListener("change", () => {
+  syncHomeTypeOptions();
+  syncCommercialRateUi({ resetSpread: true, resetLpr: true });
+  renderResult();
+});
+[els.homeType, els.startDate].forEach((input) => {
   input.addEventListener("change", () => {
     syncCommercialRateUi({ resetSpread: true, resetLpr: true });
     renderResult();
@@ -1133,7 +1277,7 @@ els.form.addEventListener("input", renderResult);
   });
 });
 els.addPrepay.addEventListener("click", () => {
-  addPrepayRow(60, 20, "reducePayment");
+  addPrepayRow(36, 10, "reducePayment");
   renderResult();
 });
 els.exportCsv.addEventListener("click", exportCsv);
@@ -1142,17 +1286,30 @@ els.loadScenario.addEventListener("click", loadScenario);
 els.deleteScenario.addEventListener("click", deleteScenario);
 els.exportScenarios.addEventListener("click", exportScenariosBackup);
 els.importScenarios.addEventListener("change", importScenariosBackup);
+document.querySelectorAll("[data-chart-series]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const series = button.dataset.chartSeries;
+    if (activeChartSeries.has(series)) activeChartSeries.delete(series);
+    else activeChartSeries.add(series);
+    button.classList.toggle("active", activeChartSeries.has(series));
+    if (latestResult) drawChart(latestResult.prepay.schedule);
+  });
+});
+els.chart.addEventListener("mousemove", handleChartHover);
+els.chart.addEventListener("mouseleave", hideChartTooltip);
 els.fundLoanRateMode.addEventListener("change", () => {
   els.fundManualRateWrap.classList.toggle("hidden", els.fundLoanRateMode.value !== "manual");
   renderResult();
 });
 els.resetBtn.addEventListener("click", () => {
   setRateMode("auto");
-  els.principal.value = 300;
+  els.commercialEnabled.checked = true;
+  els.principal.value = 100;
   els.years.value = 30;
   els.startDate.value = "2024-06-15";
   els.repaymentType.value = "equalInstallment";
   els.loanCity.value = "shanghai";
+  syncHomeTypeOptions("first");
   els.homeType.value = "first";
   els.repricing.value = "cycle";
   els.extraBps.value = 0;
@@ -1161,38 +1318,38 @@ els.resetBtn.addEventListener("click", () => {
   els.manualRate.value = 3.5;
   els.manualRepricing.value = "none";
   els.commercialPriorRepriceMonths.value = 12;
-  els.commercialPriorRepriceDate.value = "2024-08-30";
-  els.commercialCycleChangeDate.value = "2024-11-12";
-  els.commercialRepriceMonths.value = 3;
+  els.commercialPriorRepriceDate.value = "";
+  els.commercialCycleChangeDate.value = "";
+  els.commercialRepriceMonths.value = 12;
   els.commercialFirstRepriceDate.value = "";
-  els.commercialAdjustmentDate.value = "2024-10-25";
+  els.commercialAdjustmentDate.value = "";
   els.commercialAdjustmentLpr.value = "";
-  els.commercialAdjustedBps.value = -30;
-  els.commercialRateHistory.value = "2024-10-25=-30";
-  els.fundEnabled.checked = true;
+  els.commercialAdjustedBps.value = 0;
+  els.commercialRateHistory.value = "";
+  els.fundEnabled.checked = false;
   els.fundBalance.value = 0;
   els.fundMonthly.value = 0;
-  els.fundLoanStartDate.value = "2022-09-01";
-  els.fundLoanPrincipal.value = 60;
+  els.fundLoanEnabled.checked = false;
+  els.fundLoanStartDate.value = "2024-06-15";
+  els.fundLoanPrincipal.value = 0;
   els.fundLoanTerm.value = 360;
   els.fundLoanRepaymentType.value = "equalPrincipal";
   els.fundLoanRateMode.value = "shanghaiFirst";
   els.fundManualRate.value = 2.6;
   els.fundRepriceMonths.value = 12;
   els.fundFirstRepriceDate.value = "2023-01-01";
-  els.fundRateHistory.value = "2022-09-01=3.25\n2023-01-01=3.10\n2025-01-01=2.85\n2026-01-01=2.60";
+  els.fundRateHistory.value = "";
   els.fundManualRateWrap.classList.add("hidden");
   els.fundStartMonth.value = 1;
   els.fundCap.value = 0;
   els.scenarioName.value = "";
   els.prepayList.innerHTML = "";
-  addPrepayRow(36, 30, "shortenTerm");
   syncCommercialRateUi({ resetSpread: true, resetLpr: true, resetAdjustmentLpr: true });
   renderResult();
 });
 
 detectStorage();
 renderSavedOptions();
-addPrepayRow(36, 30, "shortenTerm");
+syncHomeTypeOptions();
 syncCommercialRateUi({ resetSpread: true, resetLpr: true, resetAdjustmentLpr: true });
 renderResult();

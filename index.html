@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>上海房贷提前还款测算</title>
+    <title>房贷人现金流规划器</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -13,8 +13,12 @@
           <div class="brand">
             <div>
               <p class="eyebrow">Shanghai Mortgage Lab</p>
-              <h1>房贷还款测算</h1>
-              <p class="intro">综合房贷和公积金情况，动态测算未来现金流压力，辅助评估提前还款、持有或卖房等方案。</p>
+              <h1>房贷人现金流规划器</h1>
+              <p class="intro">看清未来每月实际支出，比较不同还贷方案下的现金流压力。</p>
+              <details class="usage-note">
+                <summary>使用说明</summary>
+                <p>首次填写可参考房贷合同中利率部分的约定，或贷款银行中的房贷信息。首次填写要素较多，但只用翻找一次，下次加载方案就能直接测算啦。</p>
+              </details>
             </div>
             <button id="resetBtn" class="icon-btn" title="恢复示例参数" aria-label="恢复示例参数">↺</button>
           </div>
@@ -49,47 +53,59 @@
               <p id="storageStatus" class="storage-status">数据优先保存在当前浏览器；如浏览器限制，可导出备份文件。</p>
             </div>
 
-            <div class="field-grid two">
-              <label>
-                贷款金额（万元）
-                <input id="principal" type="number" min="1" step="1" value="300" />
-              </label>
-              <label>
-                贷款年限
-                <input id="years" type="number" min="1" max="40" step="1" value="30" />
-              </label>
-            </div>
-
-            <div class="field-grid two">
-              <label>
-                放款日期
-                <input id="startDate" type="date" value="2024-06-15" />
-              </label>
-              <label>
-                还款方式
-                <select id="repaymentType">
-                  <option value="equalInstallment">等额本息</option>
-                  <option value="equalPrincipal">等额本金</option>
-                </select>
-              </label>
-            </div>
-
             <section class="rate-module">
               <div class="rate-module-title">
                 <div>
-                  <p class="eyebrow">Commercial Loan Rate</p>
-                  <h2>商贷利率设置</h2>
+                  <p class="eyebrow">Commercial Loan</p>
+                  <h2>商贷</h2>
                 </div>
+                <label class="switch">
+                  <input id="commercialEnabled" type="checkbox" checked />
+                  <span>启用</span>
+                </label>
               </div>
 
               <details class="rate-section" open>
-                <summary>初始利率</summary>
+                <summary>贷款情况</summary>
                 <div class="rate-section-body">
+                  <div class="field-grid two">
+                    <label>
+                      贷款金额（万元）
+                      <input id="principal" type="number" min="1" step="1" value="100" />
+                    </label>
+                    <label>
+                      贷款年限
+                      <input id="years" type="number" min="1" max="40" step="1" value="30" />
+                    </label>
+                  </div>
+                  <div class="field-grid two">
+                    <label>
+                      放款日期
+                      <input id="startDate" type="date" value="2024-06-15" />
+                    </label>
+                    <label>
+                      还款方式
+                      <select id="repaymentType">
+                        <option value="equalInstallment">等额本息</option>
+                        <option value="equalPrincipal">等额本金</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </details>
+
+              <details class="rate-section" open>
+                <summary>商贷利率</summary>
+                <div class="rate-section-body">
+                  <h3>初始利率</h3>
                   <div class="field-grid two">
                     <label>
                       贷款城市
                       <select id="loanCity">
                         <option value="shanghai">上海</option>
+                        <option value="beijing">北京</option>
+                        <option value="guangzhou">广州</option>
+                        <option value="shenzhen">深圳</option>
                       </select>
                     </label>
                     <label>
@@ -116,16 +132,13 @@
                     </label>
                   </div>
                   <p id="shanghaiRuleInfo" class="rule-info"></p>
-                </div>
-              </details>
-
-              <details class="rate-section" id="stockRateDetails">
-                <summary>存量利率调整</summary>
-                <div class="rate-section-body">
+                  <details class="rate-section nested-rate-section" id="stockRateDetails">
+                    <summary>存量利率调整</summary>
+                    <div class="rate-section-body">
                   <div class="field-grid three">
                     <label>
                       调整生效日
-                      <input id="commercialAdjustmentDate" type="date" value="2024-10-25" />
+                      <input id="commercialAdjustmentDate" type="date" />
                     </label>
                     <label>
                       LPR（%）
@@ -133,7 +146,7 @@
                     </label>
                     <label>
                       调整后加点（BP）
-                      <input id="commercialAdjustedBps" type="number" step="1" value="-30" />
+                      <input id="commercialAdjustedBps" type="number" step="1" value="0" />
                     </label>
                   </div>
                   <div class="field-grid two">
@@ -143,17 +156,17 @@
                     </label>
                     <label>
                       原重定价日
-                      <input id="commercialPriorRepriceDate" type="date" value="2024-08-30" />
+                      <input id="commercialPriorRepriceDate" type="date" />
                     </label>
                   </div>
                   <div class="field-grid two">
                     <label>
                       周期变更生效日
-                      <input id="commercialCycleChangeDate" type="date" value="2024-11-12" />
+                      <input id="commercialCycleChangeDate" type="date" />
                     </label>
                     <label>
                       新重定价周期（月）
-                      <input id="commercialRepriceMonths" type="number" min="1" step="1" value="3" />
+                      <input id="commercialRepriceMonths" type="number" min="1" step="1" value="12" />
                     </label>
                   </div>
                   <label>
@@ -161,6 +174,8 @@
                     <input id="commercialFirstRepriceDate" type="date" readonly />
                   </label>
                   <p class="hint">存量利率调整改变 LPR 加点；重定价周期决定下一次重新取 LPR 的日期。两个维度分别计算。</p>
+                    </div>
+                  </details>
                 </div>
               </details>
 
@@ -169,17 +184,11 @@
                 <input id="repricing" type="hidden" value="cycle" />
                 <input id="manualRate" type="number" value="3.5" />
                 <select id="manualRepricing"><option value="none">固定不变</option></select>
-                <textarea id="commercialRateHistory">2024-10-25=-30</textarea>
+                <textarea id="commercialRateHistory"></textarea>
                 <div id="autoRateFields"></div>
                 <div id="manualRateFields"></div>
               </div>
             </section>
-
-            <div class="section-title">
-              <h2>提前还款计划</h2>
-              <button id="addPrepay" type="button" class="text-btn">＋ 添加</button>
-            </div>
-            <div id="prepayList" class="prepay-list"></div>
 
             <div class="offset-box">
               <div class="section-title">
@@ -187,15 +196,21 @@
               </div>
               <p class="hint">本工具按月测算现金流，默认每月先计入公积金入账，再扣公积金贷款月供，剩余余额用于抵扣商贷。实际扣款日存在差异时，请以银行和公积金中心扣款结果为准。</p>
               <section class="fund-section">
-                <h3>公积金贷款</h3>
+                <div class="section-title">
+                  <h3>公积金贷款</h3>
+                  <label class="switch">
+                    <input id="fundLoanEnabled" type="checkbox" />
+                    <span>启用</span>
+                  </label>
+                </div>
                 <div class="field-grid two">
                   <label>
                     公积金贷款放款日
-                    <input id="fundLoanStartDate" type="date" value="2022-09-01" />
+                    <input id="fundLoanStartDate" type="date" value="2024-06-15" />
                   </label>
                   <label>
                     公积金贷款金额（万元）
-                    <input id="fundLoanPrincipal" type="number" min="0" step="1" value="60" />
+                    <input id="fundLoanPrincipal" type="number" min="0" step="1" value="0" />
                   </label>
                 </div>
                 <div class="field-grid two">
@@ -234,17 +249,14 @@
                 </div>
                 <label>
                   公积金历史利率调整记录
-                  <textarea id="fundRateHistory" rows="4">2022-09-01=3.25
-2023-01-01=3.10
-2025-01-01=2.85
-2026-01-01=2.60</textarea>
+                  <textarea id="fundRateHistory" rows="4"></textarea>
                 </label>
               </section>
               <section class="fund-section">
                 <div class="section-title">
                   <h3>抵扣商贷</h3>
                   <label class="switch">
-                    <input id="fundEnabled" type="checkbox" checked />
+                    <input id="fundEnabled" type="checkbox" />
                     <span>启用</span>
                   </label>
                 </div>
@@ -270,6 +282,12 @@
                 <p class="hint">填 0 表示不限制每月抵扣金额；实际抵扣金额仍取决于公积金账户余额，最多抵扣当月商贷月供。</p>
               </section>
             </div>
+
+            <div class="section-title">
+              <h2>提前还款计划</h2>
+              <button id="addPrepay" type="button" class="text-btn">＋ 添加</button>
+            </div>
+            <div id="prepayList" class="prepay-list"></div>
 
             <button class="primary" type="submit">开始测算</button>
           </form>
@@ -316,12 +334,19 @@
           <div class="chart-band">
             <div class="chart-head">
               <div>
-                <h2>待还本金与月供走势</h2>
+                <h2>还款走势</h2>
                 <p id="rateInfo">等待输入后计算</p>
               </div>
               <button id="exportCsv" class="text-btn" type="button">导出 CSV</button>
             </div>
-            <canvas id="balanceChart" width="1100" height="360" aria-label="待还本金与月供走势图"></canvas>
+            <div class="chart-toggles" aria-label="图表线条开关">
+              <button type="button" class="chart-toggle active" data-chart-series="balance"><span class="swatch green"></span>待还本金</button>
+              <button type="button" class="chart-toggle active" data-chart-series="commercial"><span class="swatch blue"></span>商贷月供</button>
+              <button type="button" class="chart-toggle active" data-chart-series="fundLoan"><span class="swatch gold"></span>公积金贷款月供</button>
+              <button type="button" class="chart-toggle active" data-chart-series="combined"><span class="swatch red"></span>公积金+商贷月供</button>
+            </div>
+            <canvas id="balanceChart" width="1100" height="360" aria-label="还款走势图"></canvas>
+            <div id="chartTooltip" class="chart-tooltip hidden"></div>
           </div>
 
           <div class="table-band">
@@ -354,8 +379,6 @@
           </div>
 
           <div class="notes">
-            <p>内置 LPR 数据覆盖 2019-08-20 以来的主要变动节点，并暂按 2026-05-20 的 5 年期以上 LPR 为 3.50% 处理；上海规则用于匹配新发放商贷的初始加点，存量贷款可在“存量利率调整”中按银行记录修正。</p>
-            <p>公积金贷款默认按上海首套 5 年以上存量贷款利率链计算：2022-09 起 3.25%，2023-01 起 3.10%，2025-01 起 2.85%，2026-01 起 2.60%。</p>
             <p>测算结果用于家庭现金流决策参考，实际还款以贷款合同、银行提前还款规则和扣款日为准。</p>
           </div>
         </section>

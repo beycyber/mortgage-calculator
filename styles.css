@@ -87,6 +87,25 @@ select {
   line-height: 1.6;
 }
 
+.usage-note {
+  max-width: 360px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.usage-note summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.usage-note p {
+  margin-top: 7px;
+}
+
 h1,
 h2,
 h3,
@@ -491,8 +510,61 @@ textarea:focus {
   min-width: 0;
 }
 
+.chart-band {
+  position: relative;
+}
+
 .chart-head {
   margin-bottom: 10px;
+}
+
+.chart-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.chart-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.chart-toggle.active {
+  color: var(--ink);
+  border-color: #b9c5c1;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.swatch.green {
+  background: var(--green);
+}
+
+.swatch.blue {
+  background: var(--blue);
+}
+
+.swatch.gold {
+  background: var(--gold);
+}
+
+.swatch.red {
+  background: var(--red);
 }
 
 .chart-head p,
@@ -509,6 +581,31 @@ canvas {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--paper);
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 3px;
+  min-width: 142px;
+  padding: 9px 10px;
+  border: 1px solid rgba(45, 55, 63, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 30px rgba(35, 45, 50, 0.14);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.chart-tooltip strong {
+  font-size: 13px;
+}
+
+.chart-tooltip span {
+  color: var(--muted);
 }
 
 .table-band {
