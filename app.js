@@ -122,6 +122,7 @@ const els = {
   fundEnabled: document.querySelector("#fundEnabled"),
   fundBalance: document.querySelector("#fundBalance"),
   fundMonthly: document.querySelector("#fundMonthly"),
+  fundMonthlyHistory: document.querySelector("#fundMonthlyHistory"),
   fundLoanEnabled: document.querySelector("#fundLoanEnabled"),
   fundLoanStartDate: document.querySelector("#fundLoanStartDate"),
   fundLoanPrincipal: document.querySelector("#fundLoanPrincipal"),
@@ -258,6 +259,10 @@ function valueFromHistory(history, dateIso, fallbackValue) {
   return value;
 }
 
+function monthlyDepositForDate(fund, dateIso) {
+  return valueFromHistory(fund.monthlyDepositHistory, dateIso, fund.monthlyDeposit);
+}
+
 function isCycleRepriceDate(dateIso, firstDateIso, cycleMonths) {
   if (!firstDateIso || !cycleMonths || cycleMonths <= 0) return false;
   const current = parseDate(dateIso);
@@ -361,6 +366,7 @@ function collectFormState() {
     fundEnabled: els.fundEnabled.checked,
     fundBalance: els.fundBalance.value,
     fundMonthly: els.fundMonthly.value,
+    fundMonthlyHistory: els.fundMonthlyHistory.value,
     fundLoanEnabled: els.fundLoanEnabled.checked,
     fundLoanStartDate: els.fundLoanStartDate.value,
     fundLoanPrincipal: els.fundLoanPrincipal.value,
@@ -498,7 +504,8 @@ function applyFormState(state) {
   els.fundEnabled.checked = Boolean(state.fundEnabled);
   els.fundBalance.value = state.fundBalance ?? els.fundBalance.value;
   els.fundMonthly.value = state.fundMonthly ?? els.fundMonthly.value;
-  els.fundLoanEnabled.checked = state.fundLoanEnabled ?? false;
+  els.fundMonthlyHistory.value = state.fundMonthlyHistory ?? "";
+  els.fundLoanEnabled.checked = state.fundLoanEnabled ?? Number(state.fundLoanPrincipal || 0) > 0;
   els.fundLoanStartDate.value = state.fundLoanStartDate ?? els.fundLoanStartDate.value;
   els.fundLoanPrincipal.value = state.fundLoanPrincipal ?? els.fundLoanPrincipal.value;
   els.fundLoanTerm.value = state.fundLoanTerm ?? els.fundLoanTerm.value;
@@ -603,6 +610,7 @@ function getFundConfig() {
     loanEnabled: els.fundLoanEnabled.checked,
     balance: Number(els.fundBalance.value || 0) * 10000,
     monthlyDeposit: Number(els.fundMonthly.value || 0),
+    monthlyDepositHistory: parseRateHistory(els.fundMonthlyHistory.value),
     loanStartDate: els.fundLoanStartDate.value,
     loanPrincipal: Number(els.fundLoanPrincipal.value || 0) * 10000,
     loanTerm: Number(els.fundLoanTerm.value || 0),
@@ -852,7 +860,10 @@ function calculateFundLoanState(fund, dateIso) {
 function applyFundOffset(schedule, fund) {
   const usesFundAccount = fund.enabled || fund.loanEnabled;
   let fundBalance = usesFundAccount ? fund.balance : 0;
-  const initialFundLoanState = calculateFundLoanState(fund, schedule[0]?.date || fund.loanStartDate);
+  const firstRowDate = schedule[0]?.date || fund.loanStartDate;
+  const stateDateBeforeFirstRow = firstRowDate ? iso(addMonths(parseDate(firstRowDate), -1)) : fund.loanStartDate;
+  const firstFundLoanPaymentDate = fund.loanStartDate ? iso(addMonths(parseDate(fund.loanStartDate), 1)) : "";
+  const initialFundLoanState = calculateFundLoanState(fund, stateDateBeforeFirstRow);
   let fundLoanBalance = initialFundLoanState.balance;
   let fundLoanRemainingMonths = initialFundLoanState.remainingMonths;
   let currentFundLoanRate = initialFundLoanState.annualRate;
@@ -864,6 +875,7 @@ function applyFundOffset(schedule, fund) {
         ...row,
         fundLoanPayment: 0,
         fundLoanPaid: 0,
+        totalLoanPayment: row.payment,
         fundOffset: 0,
         commercialFundOffset: 0,
         commercialCashOut: row.payment + row.prepay,
@@ -872,7 +884,8 @@ function applyFundOffset(schedule, fund) {
       };
     }
 
-    fundBalance += fund.monthlyDeposit;
+    const monthlyDeposit = monthlyDepositForDate(fund, row.date);
+    fundBalance += monthlyDeposit;
 
     const fundFallbackRate = fund.loanRateMode === "manual" ? fund.manualRate : getShanghaiFundLoanRate(row.date);
     if (isCycleRepriceDate(row.date, fund.firstRepriceDate, fund.repriceMonths)) {
@@ -884,7 +897,7 @@ function applyFundOffset(schedule, fund) {
     let fundLoanPrincipalPaid = 0;
     let fundLoanInterest = 0;
 
-    if (fund.loanEnabled && fundLoanBalance > 0.01 && fund.loanTerm > 0) {
+    if (fund.loanEnabled && firstFundLoanPaymentDate && compareIso(row.date, firstFundLoanPaymentDate) >= 0 && fundLoanBalance > 0.01 && fund.loanTerm > 0) {
       fundLoanInterest = fundLoanBalance * fundLoanMonthlyRate;
       if (fund.loanRepaymentType === "equalInstallment") {
         fundLoanPayment = Math.min(monthlyPayment(fundLoanBalance, fundLoanMonthlyRate, Math.max(fundLoanRemainingMonths, 1)), fundLoanBalance + fundLoanInterest);
@@ -904,7 +917,7 @@ function applyFundOffset(schedule, fund) {
     const offsetActive = fund.enabled && row.month >= fund.startMonth;
     const fundOffset = offsetActive ? Math.min(row.payment, cap, fundBalance) : 0;
     fundBalance = Math.max(0, fundBalance - fundOffset);
-    if (fundBalance <= 0.01 && fund.monthlyDeposit < row.payment + fundLoanPayment && depletedMonth === null) {
+    if (fundBalance <= 0.01 && monthlyDeposit < row.payment + fundLoanPayment && depletedMonth === null) {
       depletedMonth = row.month;
     }
 
@@ -914,6 +927,7 @@ function applyFundOffset(schedule, fund) {
       fundLoanPayment,
       fundLoanPaid,
       fundLoanBalance,
+      totalLoanPayment: row.payment + fundLoanPayment,
       fundOffset,
       commercialFundOffset: fundOffset,
       commercialCashOut: row.payment + row.prepay - fundOffset,
@@ -997,15 +1011,16 @@ function renderTable(rows) {
         <td>${row.date}</td>
         <td>${row.annualRate.toFixed(2)}%</td>
         <td>${currency(row.payment)}</td>
+        <td>${currency(row.fundLoanPayment || 0)}</td>
+        <td>${currency(row.totalLoanPayment || row.payment)}</td>
         <td>${currency(row.principal)}</td>
         <td>${currency(row.interest)}</td>
         <td>${row.prepay ? `${currency(row.prepay)} ${row.prepayMode === "shortenTerm" ? "缩期" : "降月供"}` : "-"}</td>
-        <td>${currency(row.fundLoanPayment || 0)}</td>
         <td>${currency(row.fundLoanPaid || 0)}</td>
         <td>${currency(row.commercialFundOffset || 0)}</td>
-        <td>${currency(row.cashOut ?? row.payment + row.prepay)}</td>
         <td>${currency(row.fundBalance || 0)}</td>
         <td>${currency(row.balance)}</td>
+        <td>${currency(row.cashOut ?? row.payment + row.prepay)}</td>
       </tr>`,
     )
     .join("");
@@ -1030,7 +1045,7 @@ function drawChart(rows) {
     ...row,
     commercialPayment: row.payment,
     fundLoanChartPayment: row.fundLoanPayment || 0,
-    combinedPayment: row.payment + (row.fundLoanPayment || 0),
+    combinedPayment: row.totalLoanPayment || row.payment + (row.fundLoanPayment || 0),
   }));
   const paymentFields = [
     activeChartSeries.has("commercial") ? "commercialPayment" : null,
@@ -1168,9 +1183,8 @@ function renderResult() {
   const currentSpreadBps = valueFromHistory(config.spreadHistory, currentDateIso, config.spreadBps);
   const currentLprDate = latestCycleRepriceDate(currentDateIso, config.firstRepriceDate, config.repriceMonths);
   const currentCommercialRate = getCommercialAnnualRate(config, currentDateIso);
-  const cityName = CITY_OPTIONS[config.loanCity]?.name || "当前城市";
   els.shanghaiRuleInfo.textContent = config.commercialEnabled
-    ? `页面会按${cityName}公开口径估算初始利率；如与贷款合同或银行记录不一致，请以合同和银行记录为准，可手动修正 LPR 或加点。`
+    ? "首次填写可查找房贷合同中对利率的约定，或在贷款银行的手机 app 中查找房贷相关信息。本工具参照公开口径估算初始利率，如与贷款合同或银行记录不一致，请以合同和银行记录为准，可手动修正 LPR 或加点。"
     : "未启用商贷时，商贷利率不参与测算。";
   els.rateInfo.textContent = "展示当前方案下待还本金、商贷月供、公积金贷款月供与合计月供的变化；点击下方标签可显示或隐藏对应线条。";
   els.firstCashOut.textContent = currency(visiblePlan.firstCashOut);
@@ -1221,21 +1235,22 @@ function addPrepayRow(month = 36, amount = 10, mode = "shortenTerm") {
 function exportCsv() {
   if (!latestResult) return;
   const rows = latestResult.prepay.schedule;
-  const header = ["期数", "日期", "年利率", "月供", "本金", "利息", "提前还款", "公积金贷款应还", "账户扣公积金贷", "账户抵充商贷", "自有现金支出", "公积金账户余额", "商贷剩余本金"];
+  const header = ["期数", "日期", "年利率", "商贷月供", "公积金贷款月供", "合计月供", "本金", "利息", "提前还款", "账户扣公积金贷", "账户抵充商贷", "公积金账户余额", "商贷剩余本金", "自有现金支出"];
   const body = rows.map((r) => [
     r.month,
     r.date,
     r.annualRate.toFixed(4),
     r.payment.toFixed(2),
+    (r.fundLoanPayment || 0).toFixed(2),
+    (r.totalLoanPayment || r.payment).toFixed(2),
     r.principal.toFixed(2),
     r.interest.toFixed(2),
     r.prepay.toFixed(2),
-    (r.fundLoanPayment || 0).toFixed(2),
     (r.fundLoanPaid || 0).toFixed(2),
     (r.commercialFundOffset || 0).toFixed(2),
-    (r.cashOut ?? r.payment + r.prepay).toFixed(2),
     (r.fundBalance || 0).toFixed(2),
     r.balance.toFixed(2),
+    (r.cashOut ?? r.payment + r.prepay).toFixed(2),
   ]);
   const csv = [header, ...body].map((line) => line.join(",")).join("\n");
   const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
@@ -1329,6 +1344,7 @@ els.resetBtn.addEventListener("click", () => {
   els.fundEnabled.checked = false;
   els.fundBalance.value = 0;
   els.fundMonthly.value = 0;
+  els.fundMonthlyHistory.value = "";
   els.fundLoanEnabled.checked = false;
   els.fundLoanStartDate.value = "2024-06-15";
   els.fundLoanPrincipal.value = 0;

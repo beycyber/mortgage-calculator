@@ -226,6 +226,10 @@ textarea:focus {
 }
 
 .rate-module-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding-bottom: 2px;
 }
 
