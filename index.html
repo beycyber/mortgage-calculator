@@ -12,10 +12,19 @@
         <aside class="panel inputs" aria-label="输入区">
           <div class="brand">
             <div>
-              <p class="eyebrow">Shanghai Mortgage Lab</p>
-              <h1>房贷人现金流规划器</h1>
+              <p class="eyebrow">房贷现金流工具</p>
+              <div class="title-lockup">
+                <span class="house-mark" aria-hidden="true">
+                  <svg viewBox="0 0 32 32" focusable="false">
+                    <path d="M5 14.5 16 5l11 9.5" />
+                    <path d="M8.5 13.5V26h15V13.5" />
+                    <path d="M13 26v-8h6v8" />
+                  </svg>
+                </span>
+                <h1>房贷人现金流规划器</h1>
+              </div>
               <p class="intro">看清未来每月房贷支出，比较不同还贷方案下的现金流安排。</p>
-              <details class="usage-note">
+              <details class="usage-note" open>
                 <summary>使用说明</summary>
                 <p>为更准确地测算现金流，本工具设置了精细化的填写要素，但只用翻找一次，保存好方案，以后直接加载就可以了哦。</p>
               </details>
@@ -51,12 +60,13 @@
                 </label>
               </div>
               <p id="storageStatus" class="storage-status">数据优先保存在当前浏览器；如浏览器限制，可导出备份文件。</p>
+              <p class="privacy-note">数据只会保存在你当前使用的浏览器里，本工具没有服务器，也不会上传、收集或发送你的贷款、公积金和方案信息；工具开发者看不到你填写的内容。</p>
             </div>
 
             <section class="rate-module">
               <div class="rate-module-title">
                 <div>
-                  <p class="eyebrow">Commercial Loan</p>
+                  <p class="eyebrow">商业贷款</p>
                   <h2>商贷</h2>
                 </div>
                 <label class="switch">
@@ -132,9 +142,12 @@
                     </label>
                   </div>
                   <p id="shanghaiRuleInfo" class="rule-info"></p>
-                  <details class="rate-section nested-rate-section" id="stockRateDetails">
-                    <summary>存量利率调整</summary>
-                    <div class="rate-section-body">
+                </div>
+              </details>
+
+              <details class="rate-section" id="stockRateDetails">
+                <summary>存量利率调整</summary>
+                <div class="rate-section-body">
                   <div class="field-grid three">
                     <label>
                       调整生效日
@@ -174,8 +187,6 @@
                     <input id="commercialFirstRepriceDate" type="date" readonly />
                   </label>
                   <p class="hint">存量利率调整改变 LPR 加点；重定价周期决定下一次重新取 LPR 的日期。两个维度分别计算。</p>
-                    </div>
-                  </details>
                 </div>
               </details>
 
@@ -290,8 +301,9 @@
 
             <div class="section-title">
               <h2>提前还款计划</h2>
-              <button id="addPrepay" type="button" class="text-btn">＋ 添加</button>
+              <button id="addPrepay" type="button" class="text-btn">＋ 添加一笔</button>
             </div>
+            <p id="prepaySummary" class="prepay-summary">暂未设置提前还款。</p>
             <div id="prepayList" class="prepay-list"></div>
 
             <button class="primary" type="submit">开始测算</button>
@@ -302,32 +314,33 @@
           <div class="result-summary">
             <h2>测算概览</h2>
             <p id="resultSummary">等待输入后计算</p>
-            <div class="summary-grid">
-              <article class="metric compact accent-blue">
-                <span>今年来还贷（自费部分）</span>
+            <div class="summary-grid overview-grid">
+              <article class="metric total-metric">
+                <span>累计还款（万元）</span>
+                <strong id="accruedRepayment">--</strong>
+                <small id="repaymentSourceBreakdown" class="metric-note">公积金抵充 --：本金 -- · 利息 --<br />自费还款 --：本金 -- · 利息 --</small>
+              </article>
+              <article class="metric soft-metric">
+                <span>今年以来还款（万元）</span>
                 <strong id="avgCashOut">--</strong>
-                <small id="currentYearCashBreakdown" class="metric-note">本金 -- · 利息 --</small>
+                <small id="currentYearCashBreakdown" class="metric-note">公积金抵充 --：本金 -- · 利息 --<br />自费还款 --：本金 -- · 利息 --</small>
               </article>
-              <article class="metric compact accent-gold">
-                <span>公积金累计冲抵商贷（万元）</span>
-                <strong id="totalFundOffset">--</strong>
-                <small id="fundOffsetBreakdown" class="metric-note">本金 -- · 利息 --</small>
-              </article>
-              <article class="metric compact accent-green">
+              <article class="metric compact plan-metric">
                 <span>已节省利息（万元）</span>
                 <strong id="savedInterest">--</strong>
               </article>
-              <article class="metric compact accent-red">
+              <article class="metric compact plan-metric">
                 <span>还贷期限变化</span>
                 <strong id="termChange">--</strong>
               </article>
-              <article class="metric compact accent-blue">
-                <span>累计自费还商贷（万元）</span>
+              <article class="hidden" aria-hidden="true">
+                <strong id="totalFundOffset">--</strong>
+                <small id="fundOffsetBreakdown" class="metric-note">本金 -- · 利息 --</small>
                 <strong id="accruedCashOut">--</strong>
                 <small id="cashOutBreakdown" class="metric-note">本金 -- · 利息 --</small>
               </article>
             </div>
-            <p class="hint">累计冲抵与累计自费还商贷均仅统计截至当前测算日期的商贷还款，包含商贷本金和利息；本金减少额还需单独扣除已付利息。</p>
+            <p class="hint">统计口径：概览中的累计金额默认统计截至今天已发生的商贷还款；未来月份请查看现金流明细和还款走势。</p>
             <div class="hidden" aria-hidden="true">
               <strong id="totalInterest">--</strong>
               <strong id="payoffDate">--</strong>
@@ -345,7 +358,7 @@
               <button id="exportCsv" class="text-btn" type="button">导出 CSV</button>
             </div>
             <div class="chart-toggles" aria-label="图表线条开关">
-              <button type="button" class="chart-toggle active" data-chart-series="balance"><span class="swatch green"></span>待还本金</button>
+              <button type="button" class="chart-toggle active" data-chart-series="balance"><span class="swatch primary"></span>待还本金</button>
               <button type="button" class="chart-toggle active" data-chart-series="commercial"><span class="swatch blue"></span>商贷月供</button>
               <button type="button" class="chart-toggle active" data-chart-series="fundLoan"><span class="swatch gold"></span>公积金贷款月供</button>
               <button type="button" class="chart-toggle active" data-chart-series="combined"><span class="swatch red"></span>公积金+商贷月供</button>
@@ -385,7 +398,8 @@
           </div>
 
           <div class="notes">
-            <p>测算结果用于家庭现金流决策参考，实际还款以贷款合同、银行提前还款规则和扣款日为准。</p>
+            <p>测算结果用于现金流决策参考，实际还款以贷款合同、银行提前还款规则和扣款日为准。</p>
+            <p class="credit">版本：v2026.06.26 · 开发者：Bey</p>
           </div>
         </section>
       </section>

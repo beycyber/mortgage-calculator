@@ -108,6 +108,7 @@ const els = {
   shanghaiRuleInfo: document.querySelector("#shanghaiRuleInfo"),
   addPrepay: document.querySelector("#addPrepay"),
   prepayList: document.querySelector("#prepayList"),
+  prepaySummary: document.querySelector("#prepaySummary"),
   savedInterest: document.querySelector("#savedInterest"),
   totalInterest: document.querySelector("#totalInterest"),
   payoffDate: document.querySelector("#payoffDate"),
@@ -139,6 +140,8 @@ const els = {
   firstCashOut: document.querySelector("#firstCashOut"),
   avgCashOut: document.querySelector("#avgCashOut"),
   currentYearCashBreakdown: document.querySelector("#currentYearCashBreakdown"),
+  accruedRepayment: document.querySelector("#accruedRepayment"),
+  repaymentSourceBreakdown: document.querySelector("#repaymentSourceBreakdown"),
   totalFundOffset: document.querySelector("#totalFundOffset"),
   fundOffsetBreakdown: document.querySelector("#fundOffsetBreakdown"),
   accruedCashOut: document.querySelector("#accruedCashOut"),
@@ -158,6 +161,8 @@ const els = {
 let rateMode = "auto";
 let activeTab = "prepay";
 let latestResult = null;
+let activeScenarioId = "";
+let activeScenarioStateSnapshot = "";
 const activeChartSeries = new Set(["balance", "commercial", "fundLoan", "combined"]);
 let latestChartHitAreas = [];
 
@@ -312,6 +317,9 @@ function syncInitialRateMatch({ resetSpread = false, resetLpr = false } = {}) {
   const lpr = Number(els.initialLpr.value || matchedLpr);
   els.initialMatchedRate.value = (lpr + spread / 100).toFixed(2);
   els.extraBps.value = spread - matchedSpread;
+  els.shanghaiRuleInfo.textContent = els.commercialEnabled.checked
+    ? "首次填写可查找房贷合同中对利率的约定，或在贷款银行的手机 app 中查找房贷相关信息。本工具参照公开口径估算初始利率，如与贷款合同或银行记录不一致，请以合同和银行记录为准，可手动修正 LPR 或加点。"
+    : "未启用商贷时，商贷利率不参与测算。";
 }
 
 function syncStockRateAdjustment({ resetAdjustmentLpr = false } = {}) {
@@ -336,6 +344,42 @@ function getPrepayRowsForStorage() {
     amount: row.querySelector(".prepay-amount").value,
     mode: row.querySelector(".prepay-mode").value,
   }));
+}
+
+function getPrepayRows() {
+  return getPrepayRowsForStorage()
+    .map((item) => ({
+      month: Number(item.month),
+      amount: Number(item.amount),
+      mode: item.mode,
+    }))
+    .filter((item) => item.month > 0 && item.amount > 0)
+    .sort((a, b) => a.month - b.month);
+}
+
+function renderPrepaySummary() {
+  const rows = getPrepayRows();
+  if (!rows.length) {
+    els.prepaySummary.textContent = "暂未设置提前还款。";
+    return;
+  }
+  const total = rows.reduce((sum, row) => sum + row.amount, 0);
+  const preview = rows
+    .slice(0, 2)
+    .map((row) => `第 ${row.month} 期 ${row.amount} 万`)
+    .join("；");
+  els.prepaySummary.textContent = `${rows.length} 笔，合计 ${total.toFixed(2)} 万；${preview}${rows.length > 2 ? " 等" : ""}`;
+}
+
+function scenarioStateKey(state) {
+  if (Array.isArray(state)) return `[${state.map((item) => scenarioStateKey(item)).join(",")}]`;
+  if (state && typeof state === "object") {
+    return `{${Object.keys(state)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${scenarioStateKey(state[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(state);
 }
 
 function collectFormState() {
@@ -462,19 +506,24 @@ function saveScenario() {
   const fallbackName = els.commercialEnabled.checked ? `${els.startDate.value || "房贷"} ${els.principal.value || "0"}万` : "现金流方案";
   const name = (els.scenarioName.value || fallbackName).trim().slice(0, 28);
   const items = readSavedScenarios();
-  const currentId = els.savedScenarios.value;
-  const existing = items.find((item) => item.id === currentId && item.name === name);
+  const currentState = collectFormState();
+  const currentStateKey = scenarioStateKey(currentState);
+  const canUpdateActiveScenario = activeScenarioId && activeScenarioStateSnapshot === currentStateKey;
+  const existing = canUpdateActiveScenario ? items.find((item) => item.id === activeScenarioId) : null;
   const item = {
     id: existing?.id || `scenario-${Date.now()}`,
     name,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
-    state: collectFormState(),
+    state: currentState,
   };
   const next = [item, ...items.filter((saved) => saved.id !== item.id)].slice(0, 30);
   const savedTo = writeSavedScenarios(next);
+  activeScenarioId = item.id;
+  activeScenarioStateSnapshot = currentStateKey;
   renderSavedOptions(item.id);
-  setStorageStatus(savedTo === "local" ? `已保存到当前浏览器：${name}` : `已临时保存：${name}。刷新前请导出备份文件。`);
+  const actionText = existing ? "已更新方案" : "已另存为新方案";
+  setStorageStatus(savedTo === "local" ? `${actionText}：${name}` : `${actionText}：${name}。刷新前请导出备份文件。`);
 }
 
 function applyFormState(state) {
@@ -521,8 +570,9 @@ function applyFormState(state) {
   els.prepayList.innerHTML = "";
   const prepays = Array.isArray(state.prepays) ? state.prepays : [];
   prepays.forEach((item) => addPrepayRow(item.month, item.amount, item.mode));
+  renderPrepaySummary();
   syncCommercialRateUi();
-  renderResult();
+  resetResultView("已加载方案，点击开始测算生成结果。");
 }
 
 function loadScenario() {
@@ -531,6 +581,8 @@ function loadScenario() {
   if (!item) return;
   els.scenarioName.value = item.name;
   applyFormState(item.state);
+  activeScenarioId = item.id;
+  activeScenarioStateSnapshot = scenarioStateKey(collectFormState());
   setStorageStatus(`已加载：${item.name}`);
 }
 
@@ -539,6 +591,11 @@ function deleteScenario() {
   const item = items.find((saved) => saved.id === els.savedScenarios.value);
   const next = items.filter((saved) => saved.id !== els.savedScenarios.value);
   writeSavedScenarios(next);
+  if (item?.id === activeScenarioId) {
+    activeScenarioId = "";
+    activeScenarioStateSnapshot = "";
+    els.scenarioName.value = "";
+  }
   renderSavedOptions();
   setStorageStatus(item ? `已删除：${item.name}` : "已删除。");
 }
@@ -658,11 +715,10 @@ function getInputs() {
     initialRate = Number(els.initialLpr.value || getLpr(startIso)) + initialSpreadBps / 100;
   }
 
-  const prepays = Array.from(els.prepayList.querySelectorAll(".prepay-row"))
-    .map((row) => ({
-      month: Number(row.querySelector(".prepay-month").value),
-      amount: Number(row.querySelector(".prepay-amount").value) * 10000,
-      mode: row.querySelector(".prepay-mode").value,
+  const prepays = getPrepayRows()
+    .map((item) => ({
+      ...item,
+      amount: item.amount * 10000,
     }))
     .filter((item) => item.month > 0 && item.amount > 0)
     .sort((a, b) => a.month - b.month);
@@ -938,6 +994,33 @@ function applyFundOffset(schedule, fund) {
   });
 }
 
+function splitCommercialRepaymentBySource(rows) {
+  const totals = rows.reduce(
+    (summary, row) => {
+      const scheduledPayment = row.principal + row.interest;
+      const fundShare = scheduledPayment > 0 ? Math.min(1, row.commercialFundOffset / scheduledPayment) : 0;
+      const fundPrincipal = row.principal * fundShare;
+      const fundInterest = row.interest * fundShare;
+      summary.fundPrincipal += fundPrincipal;
+      summary.fundInterest += fundInterest;
+      summary.cashPrincipal += row.principal - fundPrincipal + row.prepay;
+      summary.cashInterest += row.interest - fundInterest;
+      return summary;
+    },
+    { fundPrincipal: 0, fundInterest: 0, cashPrincipal: 0, cashInterest: 0 },
+  );
+
+  return {
+    ...totals,
+    fundTotal: totals.fundPrincipal + totals.fundInterest,
+    cashTotal: totals.cashPrincipal + totals.cashInterest,
+  };
+}
+
+function formatRepaymentSourceBreakdown(breakdown) {
+  return `公积金抵充 ${(breakdown.fundTotal / 10000).toFixed(2)} 万：本金 ${(breakdown.fundPrincipal / 10000).toFixed(2)} 万 · 利息 ${(breakdown.fundInterest / 10000).toFixed(2)} 万<br />自费还款 ${(breakdown.cashTotal / 10000).toFixed(2)} 万：本金 ${(breakdown.cashPrincipal / 10000).toFixed(2)} 万 · 利息 ${(breakdown.cashInterest / 10000).toFixed(2)} 万`;
+}
+
 function enrichPlanWithCashflow(plan, fund) {
   const schedule = applyFundOffset(plan.schedule, fund);
   const totalFundOffset = schedule.reduce((sum, row) => sum + row.commercialFundOffset, 0);
@@ -958,30 +1041,8 @@ function enrichPlanWithCashflow(plan, fund) {
   const accruedFundOffset = accruedRows.reduce((sum, row) => sum + row.commercialFundOffset, 0);
   const accruedCashOut = accruedRows.reduce((sum, row) => sum + row.cashOut, 0);
   const accruedCommercialCashOut = accruedRows.reduce((sum, row) => sum + row.commercialCashOut, 0);
-  const commercialBreakdown = accruedRows.reduce(
-    (totals, row) => {
-      const scheduledPayment = row.principal + row.interest;
-      const fundShare = scheduledPayment > 0 ? Math.min(1, row.commercialFundOffset / scheduledPayment) : 0;
-      const fundPrincipal = row.principal * fundShare;
-      const fundInterest = row.interest * fundShare;
-      totals.fundPrincipal += fundPrincipal;
-      totals.fundInterest += fundInterest;
-      totals.cashPrincipal += row.principal - fundPrincipal + row.prepay;
-      totals.cashInterest += row.interest - fundInterest;
-      return totals;
-    },
-    { fundPrincipal: 0, fundInterest: 0, cashPrincipal: 0, cashInterest: 0 },
-  );
-  const currentYearCashBreakdown = currentYearRows.reduce(
-    (totals, row) => {
-      const scheduledPayment = row.principal + row.interest;
-      const fundShare = scheduledPayment > 0 ? Math.min(1, row.commercialFundOffset / scheduledPayment) : 0;
-      totals.principal += row.principal * (1 - fundShare) + row.prepay;
-      totals.interest += row.interest * (1 - fundShare);
-      return totals;
-    },
-    { principal: 0, interest: 0 },
-  );
+  const commercialBreakdown = splitCommercialRepaymentBySource(accruedRows);
+  const currentYearCommercialBreakdown = splitCommercialRepaymentBySource(currentYearRows);
   const depletedMonth = schedule.find((row) => row.fundDepletedMonth)?.fundDepletedMonth || null;
 
   return {
@@ -993,7 +1054,7 @@ function enrichPlanWithCashflow(plan, fund) {
     avgFirstYearCashOut,
     avgRecentYearCashOut,
     currentYearCashOut,
-    currentYearCashBreakdown,
+    currentYearCommercialBreakdown,
     accruedFundOffset,
     accruedCashOut,
     accruedCommercialCashOut,
@@ -1026,6 +1087,41 @@ function renderTable(rows) {
     .join("");
 }
 
+function resetResultView(message = "填写或加载方案后，点击开始测算生成结果。") {
+  latestResult = null;
+  latestChartHitAreas = [];
+  hideChartTooltip();
+  els.resultSummary.textContent = message;
+  els.rateInfo.textContent = "点击开始测算后展示还款走势。";
+  els.detailMode.textContent = "点击开始测算后生成";
+  els.savedInterest.textContent = "--";
+  els.totalInterest.textContent = "--";
+  els.payoffDate.textContent = "--";
+  els.termChange.textContent = "--";
+  els.firstCashOut.textContent = "--";
+  els.avgCashOut.textContent = "--";
+  els.currentYearCashBreakdown.innerHTML = "公积金抵充 --：本金 -- · 利息 --<br />自费还款 --：本金 -- · 利息 --";
+  els.accruedRepayment.textContent = "--";
+  els.repaymentSourceBreakdown.innerHTML = "公积金抵充 --：本金 -- · 利息 --<br />自费还款 --：本金 -- · 利息 --";
+  els.totalFundOffset.textContent = "--";
+  els.fundOffsetBreakdown.textContent = "本金 -- · 利息 --";
+  els.accruedCashOut.textContent = "--";
+  els.cashOutBreakdown.textContent = "本金 -- · 利息 --";
+  els.fundDepletedMonth.textContent = "--";
+  renderTable([]);
+  drawChart([]);
+}
+
+function markResultPending() {
+  if (latestResult) {
+    els.resultSummary.textContent = "参数已变化，请点击开始测算更新结果。";
+    els.rateInfo.textContent = "参数已变化，请重新测算后查看最新走势。";
+    els.detailMode.textContent = "参数已变化，等待重新测算";
+  } else {
+    resetResultView();
+  }
+}
+
 function drawChart(rows) {
   const canvas = els.chart;
   const ctx = canvas.getContext("2d");
@@ -1034,7 +1130,7 @@ function drawChart(rows) {
   latestChartHitAreas = [];
   hideChartTooltip();
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#fbfaf7";
+  ctx.fillStyle = "#fff9f6";
   ctx.fillRect(0, 0, width, height);
 
   const pad = { left: 64, right: 72, top: 28, bottom: 48 };
@@ -1055,10 +1151,10 @@ function drawChart(rows) {
   const maxBalance = activeChartSeries.has("balance") ? Math.max(...chartRows.map((r) => r.balance), 1) : 1;
   const maxPayment = paymentFields.length ? Math.max(...paymentFields.flatMap((field) => chartRows.map((row) => row[field])), 1) : 1;
 
-  ctx.strokeStyle = "#dce2e0";
+  ctx.strokeStyle = "#eadbd6";
   ctx.lineWidth = 1;
   ctx.font = "13px Arial";
-  ctx.fillStyle = "#6b747c";
+  ctx.fillStyle = "#786a66";
   for (let i = 0; i <= 4; i++) {
     const y = pad.top + (plotH * i) / 4;
     ctx.beginPath();
@@ -1073,7 +1169,7 @@ function drawChart(rows) {
     const firstYear = parseDate(chartRows[0].date).getFullYear();
     const lastYear = parseDate(chartRows.at(-1).date).getFullYear();
     const yearStep = Math.max(1, Math.ceil((lastYear - firstYear + 1) / 8));
-    ctx.fillStyle = "#6b747c";
+    ctx.fillStyle = "#786a66";
     for (let year = firstYear; year <= lastYear; year += yearStep) {
       const rowIndex = chartRows.findIndex((row) => parseDate(row.date).getFullYear() >= year);
       if (rowIndex < 0) continue;
@@ -1120,10 +1216,36 @@ function drawChart(rows) {
     ctx.stroke();
   }
 
-  if (activeChartSeries.has("balance")) line("#2f7d57", "balance", maxBalance, "balance", "待还本金");
-  if (activeChartSeries.has("commercial")) line("#2e6f9e", "commercialPayment", maxPayment, "commercial", "商贷月供");
-  if (activeChartSeries.has("fundLoan")) line("#a8791d", "fundLoanChartPayment", maxPayment, "fundLoan", "公积金贷款月供");
-  if (activeChartSeries.has("combined")) line("#b75d4a", "combinedPayment", maxPayment, "combined", "公积金+商贷月供");
+  if (activeChartSeries.has("balance")) line("#b6423c", "balance", maxBalance, "balance", "待还本金");
+  if (activeChartSeries.has("commercial")) line("#8c4b6f", "commercialPayment", maxPayment, "commercial", "商贷月供");
+  if (activeChartSeries.has("fundLoan")) line("#b17835", "fundLoanChartPayment", maxPayment, "fundLoan", "公积金贷款月供");
+  if (activeChartSeries.has("combined")) line("#d05a48", "combinedPayment", maxPayment, "combined", "公积金+商贷月供");
+
+  chartRows
+    .filter((row) => row.prepay > 0)
+    .forEach((row) => {
+      const index = chartRows.indexOf(row);
+      const x = pad.left + (plotW * index) / Math.max(maxMonth - 1, 1);
+      const markerY = pad.top + 12;
+      ctx.save();
+      ctx.strokeStyle = "rgba(182, 66, 60, 0.42)";
+      ctx.setLineDash([5, 6]);
+      ctx.beginPath();
+      ctx.moveTo(x, pad.top);
+      ctx.lineTo(x, pad.top + plotH);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#b6423c";
+      ctx.beginPath();
+      ctx.moveTo(x, markerY - 7);
+      ctx.lineTo(x + 7, markerY);
+      ctx.lineTo(x, markerY + 7);
+      ctx.lineTo(x - 7, markerY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      registerHitArea(row, index, x, markerY, "prepay", `提前还款（${row.prepayMode === "shortenTerm" ? "缩短期限" : "减少月供"}）`, row.prepay);
+    });
 }
 
 function hideChartTooltip() {
@@ -1188,8 +1310,12 @@ function renderResult() {
     : "未启用商贷时，商贷利率不参与测算。";
   els.rateInfo.textContent = "展示当前方案下待还本金、商贷月供、公积金贷款月供与合计月供的变化；点击下方标签可显示或隐藏对应线条。";
   els.firstCashOut.textContent = currency(visiblePlan.firstCashOut);
-  els.avgCashOut.textContent = (visiblePlan.currentYearCashOut / 10000).toFixed(2);
-  els.currentYearCashBreakdown.textContent = `本金 ${(visiblePlan.currentYearCashBreakdown.principal / 10000).toFixed(2)} 万 · 利息 ${(visiblePlan.currentYearCashBreakdown.interest / 10000).toFixed(2)} 万`;
+  const currentYearRepayment = visiblePlan.currentYearCommercialBreakdown.fundTotal + visiblePlan.currentYearCommercialBreakdown.cashTotal;
+  els.avgCashOut.textContent = (currentYearRepayment / 10000).toFixed(2);
+  els.currentYearCashBreakdown.innerHTML = formatRepaymentSourceBreakdown(visiblePlan.currentYearCommercialBreakdown);
+  const accruedRepayment = visiblePlan.commercialBreakdown.fundTotal + visiblePlan.commercialBreakdown.cashTotal;
+  els.accruedRepayment.textContent = (accruedRepayment / 10000).toFixed(2);
+  els.repaymentSourceBreakdown.innerHTML = formatRepaymentSourceBreakdown(visiblePlan.commercialBreakdown);
   els.totalFundOffset.textContent = (visiblePlan.accruedFundOffset / 10000).toFixed(2);
   els.fundOffsetBreakdown.textContent = `本金 ${(visiblePlan.commercialBreakdown.fundPrincipal / 10000).toFixed(2)} 万 · 利息 ${(visiblePlan.commercialBreakdown.fundInterest / 10000).toFixed(2)} 万`;
   els.accruedCashOut.textContent = (visiblePlan.accruedCommercialCashOut / 10000).toFixed(2);
@@ -1210,7 +1336,7 @@ function addPrepayRow(month = 36, amount = 10, mode = "shortenTerm") {
   const row = document.createElement("div");
   row.className = "prepay-row";
   row.innerHTML = `
-    <label>第几期后还
+    <label>还款时间（第几期）
       <input class="prepay-month" type="number" min="1" step="1" value="${month}" />
     </label>
     <label>金额（万元）
@@ -1226,10 +1352,15 @@ function addPrepayRow(month = 36, amount = 10, mode = "shortenTerm") {
   `;
   row.querySelector(".remove-prepay").addEventListener("click", () => {
     row.remove();
-    renderResult();
+    renderPrepaySummary();
+    markResultPending();
   });
-  row.addEventListener("input", renderResult);
+  row.addEventListener("input", () => {
+    renderPrepaySummary();
+    markResultPending();
+  });
   els.prepayList.appendChild(row);
+  renderPrepaySummary();
 }
 
 function exportCsv() {
@@ -1265,7 +1396,7 @@ function exportCsv() {
 document.querySelectorAll("[data-rate-mode]").forEach((button) => {
   button.addEventListener("click", () => {
     setRateMode(button.dataset.rateMode);
-    renderResult();
+    markResultPending();
   });
 });
 
@@ -1273,27 +1404,31 @@ els.form.addEventListener("submit", (event) => {
   event.preventDefault();
   renderResult();
 });
-els.form.addEventListener("input", renderResult);
+els.form.addEventListener("input", (event) => {
+  if (event.target === els.scenarioName) return;
+  syncCommercialRateUi();
+  markResultPending();
+});
 els.loanCity.addEventListener("change", () => {
   syncHomeTypeOptions();
   syncCommercialRateUi({ resetSpread: true, resetLpr: true });
-  renderResult();
+  markResultPending();
 });
 [els.homeType, els.startDate].forEach((input) => {
   input.addEventListener("change", () => {
     syncCommercialRateUi({ resetSpread: true, resetLpr: true });
-    renderResult();
+    markResultPending();
   });
 });
 [els.commercialAdjustmentDate, els.commercialPriorRepriceDate, els.commercialPriorRepriceMonths].forEach((input) => {
   input.addEventListener("change", () => {
     syncStockRateAdjustment({ resetAdjustmentLpr: true });
-    renderResult();
+    markResultPending();
   });
 });
 els.addPrepay.addEventListener("click", () => {
   addPrepayRow(36, 10, "reducePayment");
-  renderResult();
+  markResultPending();
 });
 els.exportCsv.addEventListener("click", exportCsv);
 els.saveScenario.addEventListener("click", saveScenario);
@@ -1314,7 +1449,7 @@ els.chart.addEventListener("mousemove", handleChartHover);
 els.chart.addEventListener("mouseleave", hideChartTooltip);
 els.fundLoanRateMode.addEventListener("change", () => {
   els.fundManualRateWrap.classList.toggle("hidden", els.fundLoanRateMode.value !== "manual");
-  renderResult();
+  markResultPending();
 });
 els.resetBtn.addEventListener("click", () => {
   setRateMode("auto");
@@ -1359,13 +1494,17 @@ els.resetBtn.addEventListener("click", () => {
   els.fundStartMonth.value = 1;
   els.fundCap.value = 0;
   els.scenarioName.value = "";
+  activeScenarioId = "";
+  activeScenarioStateSnapshot = "";
   els.prepayList.innerHTML = "";
+  renderPrepaySummary();
   syncCommercialRateUi({ resetSpread: true, resetLpr: true, resetAdjustmentLpr: true });
-  renderResult();
+  resetResultView("已恢复示例参数，点击开始测算生成结果。");
 });
 
 detectStorage();
 renderSavedOptions();
 syncHomeTypeOptions();
 syncCommercialRateUi({ resetSpread: true, resetLpr: true, resetAdjustmentLpr: true });
-renderResult();
+renderPrepaySummary();
+resetResultView();
