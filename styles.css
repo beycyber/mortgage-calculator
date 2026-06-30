@@ -277,11 +277,35 @@ textarea:focus {
 }
 
 .rate-section summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 12px;
   cursor: pointer;
   color: var(--ink);
   font-size: 14px;
   font-weight: 900;
+  list-style: none;
+}
+
+.rate-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.rate-section summary::before,
+.fund-section summary::before {
+  content: "▶";
+  display: inline-block;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1;
+  transform-origin: center;
+  transition: transform 0.16s ease;
+}
+
+.rate-section[open] summary::before,
+.fund-section[open] summary::before {
+  transform: rotate(90deg);
 }
 
 .rate-section[open] summary {
@@ -318,6 +342,19 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: 7px;
   background: #fff;
+}
+
+.fund-section summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.fund-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.fund-section summary .switch {
+  margin-left: auto;
 }
 
 .switch {

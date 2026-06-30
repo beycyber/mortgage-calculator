@@ -75,7 +75,7 @@
                 </label>
               </div>
 
-              <details class="rate-section" open>
+              <details class="rate-section">
                 <summary>贷款情况</summary>
                 <div class="rate-section-body">
                   <div class="field-grid two">
@@ -104,7 +104,7 @@
                 </div>
               </details>
 
-              <details class="rate-section" open>
+              <details class="rate-section">
                 <summary>商贷利率</summary>
                 <div class="rate-section-body">
                   <h3>初始利率</h3>
@@ -203,17 +203,17 @@
 
             <div class="offset-box">
               <div class="section-title">
-                <h2>公积金使用情况</h2>
+                <h2>公积金</h2>
               </div>
               <p class="hint">本工具按月测算现金流，默认每月先计入公积金入账，再扣公积金贷款月供，剩余余额用于抵扣商贷。实际扣款日存在差异时，请以银行和公积金中心扣款结果为准。</p>
-              <section class="fund-section">
-                <div class="section-title">
+              <details class="fund-section">
+                <summary class="section-title">
                   <h3>公积金贷款</h3>
                   <label class="switch">
                     <input id="fundLoanEnabled" type="checkbox" />
                     <span>启用</span>
                   </label>
-                </div>
+                </summary>
                 <div class="field-grid two">
                   <label>
                     公积金贷款放款日
@@ -262,15 +262,15 @@
                   公积金历史利率调整记录
                   <textarea id="fundRateHistory" rows="4"></textarea>
                 </label>
-              </section>
-              <section class="fund-section">
-                <div class="section-title">
+              </details>
+              <details class="fund-section">
+                <summary class="section-title">
                   <h3>抵扣商贷</h3>
                   <label class="switch">
                     <input id="fundEnabled" type="checkbox" />
                     <span>启用</span>
                   </label>
-                </div>
+                </summary>
                 <label>
                   公积金账户余额（万元）
                   <input id="fundBalance" type="number" min="0" step="0.1" value="0" />
@@ -296,7 +296,7 @@
                   <input id="fundCap" type="number" min="0" step="100" value="0" />
                 </label>
                 <p class="hint">填 0 表示不限制每月抵扣金额；实际抵扣金额仍取决于公积金账户余额，最多抵扣当月商贷月供。</p>
-              </section>
+              </details>
             </div>
 
             <div class="section-title">
@@ -399,7 +399,7 @@
 
           <div class="notes">
             <p>测算结果用于现金流决策参考，实际还款以贷款合同、银行提前还款规则和扣款日为准。</p>
-            <p class="credit">版本：v2026.06.26 · 开发者：Bey</p>
+            <p class="credit">版本：v2026.06.30 · 开发者：Bey</p>
           </div>
         </section>
       </section>

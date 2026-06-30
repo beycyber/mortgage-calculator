@@ -1447,6 +1447,9 @@ document.querySelectorAll("[data-chart-series]").forEach((button) => {
 });
 els.chart.addEventListener("mousemove", handleChartHover);
 els.chart.addEventListener("mouseleave", hideChartTooltip);
+document.querySelectorAll(".fund-section .switch").forEach((switchControl) => {
+  switchControl.addEventListener("click", (event) => event.stopPropagation());
+});
 els.fundLoanRateMode.addEventListener("change", () => {
   els.fundManualRateWrap.classList.toggle("hidden", els.fundLoanRateMode.value !== "manual");
   markResultPending();
